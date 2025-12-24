@@ -3,7 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 import { Tabs } from '../components/Tabs.jsx';
 import ClinicalHistoryTab from '../components/ClinicalHistoryTab.jsx';
-import InbodyTab from '../components/InbodyTab.jsx';
+import InbodyTab from '../components/inbodyTab.jsx';
 import GoalsTab from '../components/GoalsTab.jsx';
 import Recall24hTab from '../components/Recall24hTab.jsx';
 import NutritionCalcTab from '../components/NutritionCalcTab.jsx';
