@@ -630,3 +630,13 @@ button:disabled {
     margin: 0 12px;
   }
 }
+.patient-contact {
+  margin-top: 6px;
+  font-size: 0.75rem;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.patient-contact-line {
+  line-height: 1.2;
+}

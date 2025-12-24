@@ -2,7 +2,9 @@
 import React from 'react';
 
 export default function PatientCard({ patient, onClick, onEdit }) {
-  const fullName = `${patient.nombre || ''} ${patient.apellido || ''}`.trim();
+  const fullName = `${patient.nombre || ''} ${
+    patient.apellido || ''
+  }`.trim();
 
   return (
     <div className="patient-card" onClick={onClick}>
@@ -10,9 +12,24 @@ export default function PatientCard({ patient, onClick, onEdit }) {
         <div className="patient-avatar">
           <div className="avatar-circle" />
         </div>
+
         <div className="patient-name-bar">{fullName}</div>
 
-        {/* Botón editar, sin disparar el click del card */}
+        {(patient.telefono || patient.email) && (
+          <div className="patient-contact">
+            {patient.telefono && (
+              <div className="patient-contact-line">
+                📞 {patient.telefono}
+              </div>
+            )}
+            {patient.email && (
+              <div className="patient-contact-line">
+                ✉️ {patient.email}
+              </div>
+            )}
+          </div>
+        )}
+
         <button
           type="button"
           className="patient-edit-btn"
