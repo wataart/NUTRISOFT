@@ -24,6 +24,18 @@ export default function InbodyTab({ patientId }) {
     porcentaje_grasa: '',
     masa_muscular_kg: '',
     porcentaje_grasa_ideal: '',
+    // NUEVO: grasa segmentada
+    grasa_brazo_izq_kg: '',
+    grasa_brazo_der_kg: '',
+    grasa_pierna_izq_kg: '',
+    grasa_pierna_der_kg: '',
+    grasa_tronco_kg: '',
+    // NUEVO: masa muscular segmentada
+    masa_brazo_izq_kg: '',
+    masa_brazo_der_kg: '',
+    masa_pierna_izq_kg: '',
+    masa_pierna_der_kg: '',
+    masa_tronco_kg: '',
   });
 
   // Fecha por defecto
@@ -105,33 +117,41 @@ export default function InbodyTab({ patientId }) {
     setMsg('');
   };
 
-  // Cálculos de grasa corporal, exceso, etc.
-  const derived = useMemo(() => {
-    const peso = parseFloat(form.peso_kg) || 0;
-    const pctGrasa = parseFloat(form.porcentaje_grasa) || 0;
-    const pctIdeal = form.porcentaje_grasa_ideal
-      ? parseFloat(form.porcentaje_grasa_ideal)
-      : 0;
+ // Cálculos de grasa corporal, exceso, etc.
+const derived = useMemo(() => {
+  const peso = parseFloat(form.peso_actual_kg) || 0;
+  const estaturaM = parseFloat(form.estatura_m) || 0;
+  const pctGrasa = parseFloat(form.porcentaje_grasa) || 0;
+  const pctIdeal = form.porcentaje_grasa_ideal
+    ? parseFloat(form.porcentaje_grasa_ideal)
+    : 0;
 
-    const grasaTotalKg =
-      peso > 0 && pctGrasa > 0 ? (peso * pctGrasa) / 100 : 0;
+  // NUEVA FÓRMULA: "Grasa corporal total (kg)" = peso (kg) / estatura² (m²)
+  const grasaTotalKg =
+    peso > 0 && estaturaM > 0 ? peso / (estaturaM * estaturaM) : 0;
 
-    const excesoPct =
-      pctGrasa > 0 && pctIdeal > 0 ? pctGrasa - pctIdeal : 0;
+  const excesoPct =
+    pctGrasa > 0 && pctIdeal > 0 ? pctGrasa - pctIdeal : 0;
 
-    const excesoKg =
-      peso > 0 && excesoPct !== 0 ? (peso * excesoPct) / 100 : 0;
+  const excesoKg =
+    peso > 0 && excesoPct !== 0 ? (peso * excesoPct) / 100 : 0;
 
-    const pesoSinExceso =
-      peso > 0 && excesoKg !== 0 ? peso - excesoKg : 0;
+  const pesoSinExceso =
+    peso > 0 && excesoKg !== 0 ? peso - excesoKg : 0;
 
-    return {
-      grasaTotalKg,
-      excesoPct,
-      excesoKg,
-      pesoSinExceso,
-    };
-  }, [form.peso_kg, form.porcentaje_grasa, form.porcentaje_grasa_ideal]);
+  return {
+    grasaTotalKg,
+    excesoPct,
+    excesoKg,
+    pesoSinExceso,
+  };
+}, [
+  form.peso_actual_kg,
+  form.estatura_m,
+  form.porcentaje_grasa,
+  form.porcentaje_grasa_ideal,
+]);
+
 
   // % de grasa ideal automático según sexo (24 hombres / 31 mujeres)
   const autoIdealFat = useMemo(() => {
@@ -149,8 +169,7 @@ export default function InbodyTab({ patientId }) {
     return '';
   }, [patientSex]);
 
-  // Si tenemos valor automático y el campo está vacío (o igual),
-  // lo rellenamos. Si la nutrióloga ya escribió algo distinto, no lo tocamos.
+  // Rellenar % ideal si está vacío
   useEffect(() => {
     if (autoIdealFat === '') return;
 
@@ -190,6 +209,54 @@ export default function InbodyTab({ patientId }) {
         : grasaTotalKg || null,
       agua_corporal_l: form.agua_corporal_l
         ? parseFloat(form.agua_corporal_l)
+        : null,
+      peso_ideal_kg: form.peso_ideal_kg
+        ? parseFloat(form.peso_ideal_kg)
+        : null,
+      imc: form.imc ? parseFloat(form.imc) : null,
+      grasa_visceral_puntos: form.grasa_visceral_puntos
+        ? parseFloat(form.grasa_visceral_puntos)
+        : null,
+      agua_ideal_min_l: form.agua_ideal_min_l
+        ? parseFloat(form.agua_ideal_min_l)
+        : null,
+      agua_ideal_max_l: form.agua_ideal_max_l
+        ? parseFloat(form.agua_ideal_max_l)
+        : null,
+      porcentaje_grasa_ideal: form.porcentaje_grasa_ideal
+        ? parseFloat(form.porcentaje_grasa_ideal)
+        : null,
+      // NUEVO: grasa segmentada
+      grasa_brazo_izq_kg: form.grasa_brazo_izq_kg
+        ? parseFloat(form.grasa_brazo_izq_kg)
+        : null,
+      grasa_brazo_der_kg: form.grasa_brazo_der_kg
+        ? parseFloat(form.grasa_brazo_der_kg)
+        : null,
+      grasa_pierna_izq_kg: form.grasa_pierna_izq_kg
+        ? parseFloat(form.grasa_pierna_izq_kg)
+        : null,
+      grasa_pierna_der_kg: form.grasa_pierna_der_kg
+        ? parseFloat(form.grasa_pierna_der_kg)
+        : null,
+      grasa_tronco_kg: form.grasa_tronco_kg
+        ? parseFloat(form.grasa_tronco_kg)
+        : null,
+      // NUEVO: masa muscular segmentada
+      masa_brazo_izq_kg: form.masa_brazo_izq_kg
+        ? parseFloat(form.masa_brazo_izq_kg)
+        : null,
+      masa_brazo_der_kg: form.masa_brazo_der_kg
+        ? parseFloat(form.masa_brazo_der_kg)
+        : null,
+      masa_pierna_izq_kg: form.masa_pierna_izq_kg
+        ? parseFloat(form.masa_pierna_izq_kg)
+        : null,
+      masa_pierna_der_kg: form.masa_pierna_der_kg
+        ? parseFloat(form.masa_pierna_der_kg)
+        : null,
+      masa_tronco_kg: form.masa_tronco_kg
+        ? parseFloat(form.masa_tronco_kg)
         : null,
     };
 
@@ -335,7 +402,7 @@ export default function InbodyTab({ patientId }) {
         </label>
 
         <label>
-          Masa muscular (kg):
+          Masa muscular total (kg):
           <input
             type="number"
             step="0.1"
@@ -353,6 +420,126 @@ export default function InbodyTab({ patientId }) {
             step="0.1"
             name="porcentaje_grasa_ideal"
             value={form.porcentaje_grasa_ideal}
+            onChange={handleChange}
+          />
+        </label>
+
+        {/* NUEVO: GRASA SEGMENTADA */}
+        <div style={{ gridColumn: '1 / -1', marginTop: 16 }}>
+          <h4>Grasa segmentada (kg)</h4>
+        </div>
+
+        <label>
+          Brazo izquierdo (kg):
+          <input
+            type="number"
+            step="0.1"
+            name="grasa_brazo_izq_kg"
+            value={form.grasa_brazo_izq_kg}
+            onChange={handleChange}
+          />
+        </label>
+
+        <label>
+          Brazo derecho (kg):
+          <input
+            type="number"
+            step="0.1"
+            name="grasa_brazo_der_kg"
+            value={form.grasa_brazo_der_kg}
+            onChange={handleChange}
+          />
+        </label>
+
+        <label>
+          Pierna izquierda (kg):
+          <input
+            type="number"
+            step="0.1"
+            name="grasa_pierna_izq_kg"
+            value={form.grasa_pierna_izq_kg}
+            onChange={handleChange}
+          />
+        </label>
+
+        <label>
+          Pierna derecha (kg):
+          <input
+            type="number"
+            step="0.1"
+            name="grasa_pierna_der_kg"
+            value={form.grasa_pierna_der_kg}
+            onChange={handleChange}
+          />
+        </label>
+
+        <label>
+          Tronco / torso (kg):
+          <input
+            type="number"
+            step="0.1"
+            name="grasa_tronco_kg"
+            value={form.grasa_tronco_kg}
+            onChange={handleChange}
+          />
+        </label>
+
+        {/* NUEVO: MASA MUSCULAR SEGMENTADA */}
+        <div style={{ gridColumn: '1 / -1', marginTop: 16 }}>
+          <h4>Masa muscular segmentada (kg)</h4>
+        </div>
+
+        <label>
+          Brazo izquierdo (kg):
+          <input
+            type="number"
+            step="0.1"
+            name="masa_brazo_izq_kg"
+            value={form.masa_brazo_izq_kg}
+            onChange={handleChange}
+          />
+        </label>
+
+        <label>
+          Brazo derecho (kg):
+          <input
+            type="number"
+            step="0.1"
+            name="masa_brazo_der_kg"
+            value={form.masa_brazo_der_kg}
+            onChange={handleChange}
+          />
+        </label>
+
+        <label>
+          Pierna izquierda (kg):
+          <input
+            type="number"
+            step="0.1"
+            name="masa_pierna_izq_kg"
+            value={form.masa_pierna_izq_kg}
+            onChange={handleChange}
+          />
+        </label>
+
+        <label>
+          Pierna derecha (kg):
+          <input
+            type="number"
+            step="0.1"
+            name="masa_pierna_der_kg"
+            value={form.masa_pierna_der_kg}
+            onChange={handleChange}
+          />
+        </label>
+
+        <label>
+          Tronco / torso (kg):
+          <input
+            type="number"
+            step="0.1"
+            name="masa_tronco_kg"
+            value={form.masa_tronco_kg}
             onChange={handleChange}
           />
         </label>
@@ -455,43 +642,6 @@ export default function InbodyTab({ patientId }) {
             "Metas".
           </p>
         )}
-
-        <div
-          style={{
-            marginTop: 12,
-            padding: 12,
-            borderRadius: 12,
-            border: '1px solid #374151',
-            background: '#020617',
-            fontSize: '0.85rem',
-          }}
-        >
-          <strong>Referencias de IMC:</strong>
-          <ul>
-            <li>&lt; 18.5 – Peso bajo</li>
-            <li>18.5 – 24.9 – Normopeso</li>
-            <li>25 – 29.9 – Sobrepeso</li>
-            <li>30 – 34.9 – Obesidad tipo 1</li>
-            <li>35 – 39.9 – Obesidad tipo 2</li>
-            <li>&gt;= 40 – Obesidad tipo 3 (mórbida)</li>
-          </ul>
-
-          <strong>Porcentaje de grasa – hombres:</strong>
-          <ul>
-            <li>&lt; 5% – Muy bajo</li>
-            <li>6 – 15% – Aceptable-bajo</li>
-            <li>16 – 24% – Aceptable-alto</li>
-            <li>&gt;= 25% – No saludable</li>
-          </ul>
-
-          <strong>Porcentaje de grasa – mujeres:</strong>
-          <ul>
-            <li>&lt; 8% – Muy bajo</li>
-            <li>9 – 23% – Aceptable-bajo</li>
-            <li>24 – 31% – Aceptable-alto</li>
-            <li>&gt;= 32% – No saludable</li>
-          </ul>
-        </div>
       </section>
 
       {/* HISTORIAL INBODY */}
