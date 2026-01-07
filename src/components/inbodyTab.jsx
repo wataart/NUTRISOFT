@@ -126,7 +126,6 @@ const derived = useMemo(() => {
     ? parseFloat(form.porcentaje_grasa_ideal)
     : 0;
 
-  // NUEVA FÓRMULA: "Grasa corporal total (kg)" = peso (kg) / estatura² (m²)
   const grasaTotalKg =
     peso > 0 && estaturaM > 0 ? peso / (estaturaM * estaturaM) : 0;
 
