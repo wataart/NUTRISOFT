@@ -1,5 +1,5 @@
 // src/components/ClinicalHistoryTab.jsx
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { supabase } from '../lib/supabaseClient';
 
 const EMPTY_FORM = {
@@ -11,7 +11,7 @@ const EMPTY_FORM = {
   hospitalizaciones: '',
   cirugias: '',
 
-  // Farmacológico y suplementos
+  // Farmacológico y suplementos (texto viejo, por si quieres notas generales)
   farmacos_suplementos: '',
   farmacos_dosis_frecuencia: '',
   farmacos_tiempo_uso: '',
@@ -36,19 +36,29 @@ const EMPTY_FORM = {
   // Antecedentes patológico-familiares
   antecedentes_familiares: '',
 
-  // Valoración antropométrica
+  // Valoración antropométrica - antecedentes de peso
   peso_maximo: '',
   peso_maximo_edad: '',
   peso_minimo: '',
   peso_minimo_edad: '',
   peso_que_le_agrada: '',
   peso_habitual: '',
+
+  // Mediciones antropométricas actuales
+  antrop_peso_kg: '',
+  antrop_talla_m: '',
+  antrop_cintura_cm: '',
+  antrop_cadera_cm: '',
+  antrop_abdominal_cm: '',
   antropometria_detalle: '',
 
   // Indicadores nutricionales
-  indicadores_nutricionales: '',
+  ind_complexion: '',
+  ind_grasa_kg: '',
+  ind_masa_muscular_kg: '',
+  indicadores_nutricionales: '', // notas / resumen libre
 
-  // Valoración bioquímica
+  // Valoración bioquímica (resumen / notas)
   valoracion_bioquimica: '',
 
   // Valoración clínica
@@ -104,8 +114,21 @@ const EMPTY_FORM = {
   aversiones_alimentarias: '',
   consumo_agua: '',
 
-  // Cuestionario de frecuencia de alimentos
-  frecuencia_alimentos: '',
+  // Cuestionario de frecuencia de alimentos (por grupo)
+  frecuencia_frutas: '',
+  frecuencia_verduras: '',
+  frecuencia_cereales: '',
+  frecuencia_leguminosas: '',
+  frecuencia_lacteos: '',
+  frecuencia_aoa: '', // alimentos de origen animal (general)
+  frecuencia_carnes_rojas: '',
+  frecuencia_carnes_blancas: '',
+  frecuencia_grasas: '',
+  frecuencia_azucares: '',
+  frecuencia_sustitutos_azucar: '',
+  frecuencia_refrescos: '',
+  frecuencia_ultraprocesados: '',
+  frecuencia_alimentos: '', // resumen global
 
   // Frecuencia de sustancias
   sustancias_alcohol: '',
@@ -142,6 +165,57 @@ export default function ClinicalHistoryTab({ patientId }) {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
 
+  // Lista de fármacos / medicamentos
+  const [farmacos, setFarmacos] = useState([
+    {
+      id: 1,
+      nombre: '',
+      dosis: '',
+      frecuencia: '',
+      tiempo_uso: '',
+      motivo: '',
+    },
+  ]);
+
+  // Lista de parámetros de valoración bioquímica
+  const [bioquimica, setBioquimica] = useState([
+    {
+      id: 1,
+      parametro: '',
+      fecha: '',
+      resultado: '',
+      unidad: '',
+      referencia: '',
+      interpretacion: '',
+    },
+  ]);
+
+  // 📐 Cálculos automáticos de IMC, % grasa, % masa muscular e índice C/C
+  const derivedAnthro = useMemo(() => {
+    const peso = parseFloat(form.antrop_peso_kg) || 0;
+    const talla = parseFloat(form.antrop_talla_m) || 0;
+    const grasaKg = parseFloat(form.ind_grasa_kg) || 0;
+    const masaKg = parseFloat(form.ind_masa_muscular_kg) || 0;
+    const cintura = parseFloat(form.antrop_cintura_cm) || 0;
+    const cadera = parseFloat(form.antrop_cadera_cm) || 0;
+
+    const imc = peso > 0 && talla > 0 ? peso / (talla * talla) : 0;
+    const pctGrasa = peso > 0 && grasaKg > 0 ? (grasaKg * 100) / peso : 0;
+    const pctMasa = peso > 0 && masaKg > 0 ? (masaKg * 100) / peso : 0;
+    const indiceCc = cintura > 0 && cadera > 0 ? cintura / cadera : 0;
+
+    return { imc, pctGrasa, pctMasa, indiceCc };
+  }, [
+    form.antrop_peso_kg,
+    form.antrop_talla_m,
+    form.ind_grasa_kg,
+    form.ind_masa_muscular_kg,
+    form.antrop_cintura_cm,
+    form.antrop_cadera_cm,
+  ]);
+
+  const { imc, pctGrasa, pctMasa, indiceCc } = derivedAnthro;
+
   // Cargar historia clínica (contenido JSON)
   useEffect(() => {
     const fetchHistory = async () => {
@@ -161,10 +235,83 @@ export default function ClinicalHistoryTab({ patientId }) {
         }
         setRecordId(null);
         setForm(EMPTY_FORM);
+        setFarmacos([
+          {
+            id: 1,
+            nombre: '',
+            dosis: '',
+            frecuencia: '',
+            tiempo_uso: '',
+            motivo: '',
+          },
+        ]);
+        setBioquimica([
+          {
+            id: 1,
+            parametro: '',
+            fecha: '',
+            resultado: '',
+            unidad: '',
+            referencia: '',
+            interpretacion: '',
+          },
+        ]);
       } else if (data) {
         setRecordId(data.id);
         const contenido = data.contenido || {};
         setForm({ ...EMPTY_FORM, ...contenido });
+
+        // Fármacos
+        if (Array.isArray(contenido.farmacos) && contenido.farmacos.length) {
+          setFarmacos(
+            contenido.farmacos.map((f, idx) => ({
+              id: idx + 1,
+              nombre: f.nombre || '',
+              dosis: f.dosis || '',
+              frecuencia: f.frecuencia || '',
+              tiempo_uso: f.tiempo_uso || '',
+              motivo: f.motivo || '',
+            }))
+          );
+        } else {
+          setFarmacos([
+            {
+              id: 1,
+              nombre: '',
+              dosis: '',
+              frecuencia: '',
+              tiempo_uso: '',
+              motivo: '',
+            },
+          ]);
+        }
+
+        // Bioquímica
+        if (Array.isArray(contenido.bioquimica) && contenido.bioquimica.length) {
+          setBioquimica(
+            contenido.bioquimica.map((b, idx) => ({
+              id: idx + 1,
+              parametro: b.parametro || '',
+              fecha: b.fecha || '',
+              resultado: b.resultado || '',
+              unidad: b.unidad || '',
+              referencia: b.referencia || '',
+              interpretacion: b.interpretacion || '',
+            }))
+          );
+        } else {
+          setBioquimica([
+            {
+              id: 1,
+              parametro: '',
+              fecha: '',
+              resultado: '',
+              unidad: '',
+              referencia: '',
+              interpretacion: '',
+            },
+          ]);
+        }
       }
 
       setLoading(false);
@@ -178,15 +325,84 @@ export default function ClinicalHistoryTab({ patientId }) {
     setMsg('');
   };
 
+  // handlers fármacos
+  const handleFarmacoChange = (id, field, value) => {
+    setFarmacos((prev) =>
+      prev.map((f) =>
+        f.id === id ? { ...f, [field]: value } : f
+      )
+    );
+    setMsg('');
+  };
+
+  const addFarmaco = () => {
+    setFarmacos((prev) => [
+      ...prev,
+      {
+        id: prev.length ? prev[prev.length - 1].id + 1 : 1,
+        nombre: '',
+        dosis: '',
+        frecuencia: '',
+        tiempo_uso: '',
+        motivo: '',
+      },
+    ]);
+  };
+
+  const removeFarmaco = (id) => {
+    setFarmacos((prev) => prev.filter((f) => f.id !== id));
+  };
+
+  // handlers bioquímica
+  const handleBioquimicaChange = (id, field, value) => {
+    setBioquimica((prev) =>
+      prev.map((b) =>
+        b.id === id ? { ...b, [field]: value } : b
+      )
+    );
+    setMsg('');
+  };
+
+  const addBioquimica = () => {
+    setBioquimica((prev) => [
+      ...prev,
+      {
+        id: prev.length ? prev[prev.length - 1].id + 1 : 1,
+        parametro: '',
+        fecha: '',
+        resultado: '',
+        unidad: '',
+        referencia: '',
+        interpretacion: '',
+      },
+    ]);
+  };
+
+  const removeBioquimica = (id) => {
+    setBioquimica((prev) => prev.filter((b) => b.id !== id));
+  };
+
   const handleSave = async (e) => {
     e.preventDefault();
     setSaving(true);
     setMsg('');
 
+    const contenidoFinal = {
+      ...form,
+      farmacos: farmacos.map(({ id, ...rest }) => rest),
+      bioquimica: bioquimica.map(({ id, ...rest }) => rest),
+      indicadores_calculados: {
+        imc,
+        porcentaje_grasa_total: pctGrasa,
+        porcentaje_masa_muscular_total: pctMasa,
+        indice_cintura_cadera: indiceCc,
+      },
+    };
+
     const payload = {
       id: recordId || undefined,
       patient_id: patientId,
-      contenido: form,
+      contenido: contenidoFinal,
     };
 
     const { data, error } = await supabase
@@ -279,49 +495,98 @@ export default function ClinicalHistoryTab({ patientId }) {
         Tratamiento farmacológico y suplementos
       </h4>
 
-      <label>
-        Fármacos o suplementos
-        <textarea
-          rows={2}
-          value={form.farmacos_suplementos}
-          onChange={(e) =>
-            handleChange('farmacos_suplementos', e.target.value)
-          }
-        />
-      </label>
+      {/* Tabla de fármacos */}
+      <section style={{ gridColumn: '1 / -1' }}>
+        <p style={{ fontSize: '0.85rem', color: '#9ca3af' }}>
+          Agrega cada medicamento por separado con su dosis, frecuencia, tiempo de uso y motivo.
+        </p>
 
-      <label>
-        Dosis y frecuencia
-        <textarea
-          rows={2}
-          value={form.farmacos_dosis_frecuencia}
-          onChange={(e) =>
-            handleChange('farmacos_dosis_frecuencia', e.target.value)
-          }
-        />
-      </label>
+        <table className="menu-items-table">
+          <thead>
+            <tr>
+              <th>Nombre del fármaco</th>
+              <th>Dosis</th>
+              <th>Frecuencia</th>
+              <th>Tiempo de uso</th>
+              <th>Motivo</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {farmacos.map((f) => (
+              <tr key={f.id}>
+                <td>
+                  <input
+                    type="text"
+                    value={f.nombre}
+                    onChange={(e) =>
+                      handleFarmacoChange(f.id, 'nombre', e.target.value)
+                    }
+                    placeholder="Ej. Metformina"
+                  />
+                </td>
+                <td>
+                  <input
+                    type="text"
+                    value={f.dosis}
+                    onChange={(e) =>
+                      handleFarmacoChange(f.id, 'dosis', e.target.value)
+                    }
+                    placeholder="Ej. 850 mg"
+                  />
+                </td>
+                <td>
+                  <input
+                    type="text"
+                    value={f.frecuencia}
+                    onChange={(e) =>
+                      handleFarmacoChange(f.id, 'frecuencia', e.target.value)
+                    }
+                    placeholder="Ej. cada 12 h"
+                  />
+                </td>
+                <td>
+                  <input
+                    type="text"
+                    value={f.tiempo_uso}
+                    onChange={(e) =>
+                      handleFarmacoChange(f.id, 'tiempo_uso', e.target.value)
+                    }
+                    placeholder="Ej. 2 años"
+                  />
+                </td>
+                <td>
+                  <input
+                    type="text"
+                    value={f.motivo}
+                    onChange={(e) =>
+                      handleFarmacoChange(f.id, 'motivo', e.target.value)
+                    }
+                    placeholder="Ej. DM2, HTA, etc."
+                  />
+                </td>
+                <td>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => removeFarmaco(f.id)}
+                  >
+                    X
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
 
-      <label>
-        Tiempo de uso
-        <textarea
-          rows={2}
-          value={form.farmacos_tiempo_uso}
-          onChange={(e) =>
-            handleChange('farmacos_tiempo_uso', e.target.value)
-          }
-        />
-      </label>
-
-      <label>
-        Motivo de uso
-        <textarea
-          rows={2}
-          value={form.farmacos_motivo_uso}
-          onChange={(e) =>
-            handleChange('farmacos_motivo_uso', e.target.value)
-          }
-        />
-      </label>
+        <button
+          type="button"
+          style={{ marginTop: 8 }}
+          onClick={addFarmaco}
+        >
+          + Agregar fármaco
+        </button>
+      </section>
 
       <label style={{ gridColumn: '1 / -1' }}>
         Interacción fármaco-nutriente
@@ -530,11 +795,86 @@ export default function ClinicalHistoryTab({ patientId }) {
         />
       </label>
 
+      {/* Mediciones antropométricas actuales */}
+      <h5 style={{ gridColumn: '1 / -1', marginTop: 8 }}>
+        Mediciones antropométricas actuales
+      </h5>
+
+      <label>
+        Peso actual (kg)
+        <input
+          type="number"
+          step="0.1"
+          value={form.antrop_peso_kg}
+          onChange={(e) =>
+            handleChange('antrop_peso_kg', e.target.value)
+          }
+        />
+      </label>
+
+      <label>
+        Talla / estatura (m)
+        <input
+          type="number"
+          step="0.01"
+          value={form.antrop_talla_m}
+          onChange={(e) =>
+            handleChange('antrop_talla_m', e.target.value)
+          }
+        />
+      </label>
+
+      <label>
+        IMC (kg/m²)
+        <input
+          type="number"
+          step="0.01"
+          value={imc ? imc.toFixed(2) : ''}
+          readOnly
+        />
+      </label>
+
+      <label>
+        Cintura (cm)
+        <input
+          type="number"
+          step="0.1"
+          value={form.antrop_cintura_cm}
+          onChange={(e) =>
+            handleChange('antrop_cintura_cm', e.target.value)
+          }
+        />
+      </label>
+
+      <label>
+        Cadera (cm)
+        <input
+          type="number"
+          step="0.1"
+          value={form.antrop_cadera_cm}
+          onChange={(e) =>
+            handleChange('antrop_cadera_cm', e.target.value)
+          }
+        />
+      </label>
+
+      <label>
+        Circunferencia abdominal (cm)
+        <input
+          type="number"
+          step="0.1"
+          value={form.antrop_abdominal_cm}
+          onChange={(e) =>
+            handleChange('antrop_abdominal_cm', e.target.value)
+          }
+        />
+      </label>
+
       <label style={{ gridColumn: '1 / -1' }}>
         Detalle de mediciones antropométricas
         <textarea
           rows={4}
-          placeholder="Peso, estatura, IMC, circunferencias, pliegues, etc."
+          placeholder="Peso, pliegues, otras circunferencias, observaciones, etc."
           value={form.antropometria_detalle}
           onChange={(e) =>
             handleChange('antropometria_detalle', e.target.value)
@@ -547,8 +887,83 @@ export default function ClinicalHistoryTab({ patientId }) {
         Indicadores nutricionales
       </h4>
 
+      <label>
+        Complexión
+        <input
+          type="text"
+          value={form.ind_complexion}
+          onChange={(e) =>
+            handleChange('ind_complexion', e.target.value)
+          }
+          placeholder="Pequeña / media / grande, etc."
+        />
+      </label>
+
+      <label>
+        Grasa corporal total (kg)
+        <input
+          type="number"
+          step="0.1"
+          value={form.ind_grasa_kg}
+          onChange={(e) =>
+            handleChange('ind_grasa_kg', e.target.value)
+          }
+        />
+      </label>
+
+      <label>
+        % de grasa corporal total
+        <input
+          type="number"
+          step="0.1"
+          value={pctGrasa ? pctGrasa.toFixed(1) : ''}
+          readOnly
+        />
+        <small style={{ display: 'block', fontSize: '0.75rem', color: '#9ca3af' }}>
+          Se calcula automáticamente: (kg de masa grasa × 100 / peso total).
+        </small>
+      </label>
+
+      <label>
+        Masa muscular total (kg)
+        <input
+          type="number"
+          step="0.1"
+          value={form.ind_masa_muscular_kg}
+          onChange={(e) =>
+            handleChange('ind_masa_muscular_kg', e.target.value)
+          }
+        />
+      </label>
+
+      <label>
+        % de masa muscular total
+        <input
+          type="number"
+          step="0.1"
+          value={pctMasa ? pctMasa.toFixed(1) : ''}
+          readOnly
+        />
+        <small style={{ display: 'block', fontSize: '0.75rem', color: '#9ca3af' }}>
+          Se calcula automáticamente: (kg de masa muscular × 100 / peso total).
+        </small>
+      </label>
+
+      <label>
+        Índice cintura–cadera
+        <input
+          type="number"
+          step="0.01"
+          value={indiceCc ? indiceCc.toFixed(2) : ''}
+          readOnly
+        />
+        <small style={{ display: 'block', fontSize: '0.75rem', color: '#9ca3af' }}>
+          Se calcula automáticamente: cintura (cm) / cadera (cm).
+        </small>
+      </label>
+
       <label style={{ gridColumn: '1 / -1' }}>
-        Resumen (complexión, IMC, % grasa, etc.)
+        Resumen de indicadores nutricionales
         <textarea
           rows={4}
           value={form.indicadores_nutricionales}
@@ -558,6 +973,7 @@ export default function ClinicalHistoryTab({ patientId }) {
               e.target.value
             )
           }
+          placeholder="Interpretación global: estado nutricio, riesgo cardiometabólico, etc."
         />
       </label>
 
@@ -566,8 +982,114 @@ export default function ClinicalHistoryTab({ patientId }) {
         Valoración bioquímica
       </h4>
 
+      <section style={{ gridColumn: '1 / -1' }}>
+        <p style={{ fontSize: '0.85rem', color: '#9ca3af' }}>
+          Registra cada parámetro de laboratorio por separado con fecha, resultado, unidad, valores de referencia e interpretación.
+        </p>
+
+        <table className="menu-items-table">
+          <thead>
+            <tr>
+              <th>Parámetro</th>
+              <th>Fecha</th>
+              <th>Resultado</th>
+              <th>Unidad</th>
+              <th>Valores de referencia</th>
+              <th>Interpretación</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {bioquimica.map((b) => (
+              <tr key={b.id}>
+                <td>
+                  <input
+                    type="text"
+                    value={b.parametro}
+                    onChange={(e) =>
+                      handleBioquimicaChange(b.id, 'parametro', e.target.value)
+                    }
+                    placeholder="Ej. Glucosa, HbA1c, Colesterol"
+                  />
+                </td>
+                <td>
+                  <input
+                    type="date"
+                    value={b.fecha}
+                    onChange={(e) =>
+                      handleBioquimicaChange(b.id, 'fecha', e.target.value)
+                    }
+                  />
+                </td>
+                <td>
+                  <input
+                    type="text"
+                    value={b.resultado}
+                    onChange={(e) =>
+                      handleBioquimicaChange(b.id, 'resultado', e.target.value)
+                    }
+                    placeholder="Ej. 95"
+                  />
+                </td>
+                <td>
+                  <input
+                    type="text"
+                    value={b.unidad}
+                    onChange={(e) =>
+                      handleBioquimicaChange(b.id, 'unidad', e.target.value)
+                    }
+                    placeholder="Ej. mg/dL"
+                  />
+                </td>
+                <td>
+                  <input
+                    type="text"
+                    value={b.referencia}
+                    onChange={(e) =>
+                      handleBioquimicaChange(b.id, 'referencia', e.target.value)
+                    }
+                    placeholder="Ej. 70–99 mg/dL"
+                  />
+                </td>
+                <td>
+                  <input
+                    type="text"
+                    value={b.interpretacion}
+                    onChange={(e) =>
+                      handleBioquimicaChange(
+                        b.id,
+                        'interpretacion',
+                        e.target.value
+                      )
+                    }
+                    placeholder="Ej. Normal, alterado, etc."
+                  />
+                </td>
+                <td>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => removeBioquimica(b.id)}
+                  >
+                    X
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        <button
+          type="button"
+          style={{ marginTop: 8 }}
+          onClick={addBioquimica}
+        >
+          + Agregar parámetro
+        </button>
+      </section>
+
       <label style={{ gridColumn: '1 / -1' }}>
-        Parámetros, fechas, resultados, interpretación
+        Notas / resumen de valoración bioquímica
         <textarea
           rows={4}
           value={form.valoracion_bioquimica}
@@ -1024,23 +1546,180 @@ export default function ClinicalHistoryTab({ patientId }) {
         />
       </label>
 
-      {/* FRECUENCIA DE ALIMENTOS */}
+      {/* CUESTIONARIO DE FRECUENCIA DE ALIMENTOS */}
       <h4 style={{ gridColumn: '1 / -1' }}>
         Cuestionario de frecuencia de consumo de alimentos
       </h4>
 
+      <p style={{ gridColumn: '1 / -1', fontSize: '0.85rem', color: '#9ca3af' }}>
+        Puedes anotar, por ejemplo: "3 veces al día", "1 vez por semana", "casi nunca", etc.
+      </p>
+
+      <label>
+        Frutas
+        <input
+          type="text"
+          value={form.frecuencia_frutas}
+          onChange={(e) =>
+            handleChange('frecuencia_frutas', e.target.value)
+          }
+          placeholder="Ej. 2 porciones/día"
+        />
+      </label>
+
+      <label>
+        Verduras
+        <input
+          type="text"
+          value={form.frecuencia_verduras}
+          onChange={(e) =>
+            handleChange('frecuencia_verduras', e.target.value)
+          }
+          placeholder="Ej. 1 vez en comida y cena"
+        />
+      </label>
+
+      <label>
+        Cereales
+        <input
+          type="text"
+          value={form.frecuencia_cereales}
+          onChange={(e) =>
+            handleChange('frecuencia_cereales', e.target.value)
+          }
+          placeholder="Ej. pan, tortilla, arroz..."
+        />
+      </label>
+
+      <label>
+        Leguminosas
+        <input
+          type="text"
+          value={form.frecuencia_leguminosas}
+          onChange={(e) =>
+            handleChange('frecuencia_leguminosas', e.target.value)
+          }
+          placeholder="Ej. frijol, lenteja, garbanzo..."
+        />
+      </label>
+
+      <label>
+        Lácteos
+        <input
+          type="text"
+          value={form.frecuencia_lacteos}
+          onChange={(e) =>
+            handleChange('frecuencia_lacteos', e.target.value)
+          }
+          placeholder="Leche, yogurt, queso..."
+        />
+      </label>
+
+      <label>
+        Alimentos de origen animal (general)
+        <input
+          type="text"
+          value={form.frecuencia_aoa}
+          onChange={(e) =>
+            handleChange('frecuencia_aoa', e.target.value)
+          }
+          placeholder="Huevos, pollo, res, pescado..."
+        />
+      </label>
+
+      <label>
+        Carnes rojas
+        <input
+          type="text"
+          value={form.frecuencia_carnes_rojas}
+          onChange={(e) =>
+            handleChange('frecuencia_carnes_rojas', e.target.value)
+          }
+          placeholder="Carne de res, cerdo..."
+        />
+      </label>
+
+      <label>
+        Carnes blancas
+        <input
+          type="text"
+          value={form.frecuencia_carnes_blancas}
+          onChange={(e) =>
+            handleChange('frecuencia_carnes_blancas', e.target.value)
+          }
+          placeholder="Pollo, pescado..."
+        />
+      </label>
+
+      <label>
+        Grasas
+        <input
+          type="text"
+          value={form.frecuencia_grasas}
+          onChange={(e) =>
+            handleChange('frecuencia_grasas', e.target.value)
+          }
+          placeholder="Aceites, mantequilla, aderezos..."
+        />
+      </label>
+
+      <label>
+        Azúcares
+        <input
+          type="text"
+          value={form.frecuencia_azucares}
+          onChange={(e) =>
+            handleChange('frecuencia_azucares', e.target.value)
+          }
+          placeholder="Dulces, postres, pan dulce..."
+        />
+      </label>
+
+      <label>
+        Sustitutos de azúcar
+        <input
+          type="text"
+          value={form.frecuencia_sustitutos_azucar}
+          onChange={(e) =>
+            handleChange('frecuencia_sustitutos_azucar', e.target.value)
+          }
+          placeholder="Stevia, sucralosa, etc."
+        />
+      </label>
+
+      <label>
+        Refrescos o bebidas endulzadas
+        <input
+          type="text"
+          value={form.frecuencia_refrescos}
+          onChange={(e) =>
+            handleChange('frecuencia_refrescos', e.target.value)
+          }
+          placeholder="Ej. 1 lata/día, solo fines de semana..."
+        />
+      </label>
+
+      <label>
+        Alimentos ultraprocesados
+        <input
+          type="text"
+          value={form.frecuencia_ultraprocesados}
+          onChange={(e) =>
+            handleChange('frecuencia_ultraprocesados', e.target.value)
+          }
+          placeholder="Galletas, papas, comida rápida..."
+        />
+      </label>
+
       <label style={{ gridColumn: '1 / -1' }}>
-        Resumen por grupo de alimento
+        Resumen global de frecuencia de alimentos (opcional)
         <textarea
-          rows={4}
+          rows={3}
           value={form.frecuencia_alimentos}
           onChange={(e) =>
-            handleChange(
-              'frecuencia_alimentos',
-              e.target.value
-            )
+            handleChange('frecuencia_alimentos', e.target.value)
           }
-          placeholder="Frutas, verduras, cereales, leguminosas, lácteos, carnes, grasas, azúcares, etc."
+          placeholder="Comentarios generales sobre el patrón de consumo."
         />
       </label>
 
