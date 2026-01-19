@@ -54,7 +54,7 @@ export default function NutritionCalcTab({ patientId }) {
     setMsg('');
   };
 
-  // Cálculos según el PDF (Mifflin, 10% TEF, factor actividad, déficit/superávit, macros)
+  // Cálculos según el PDF (Mifflin, TEF, factor actividad, déficit/superávit, macros)
   const calculated = useMemo(() => {
     const peso = parseFloat(form.peso_kg) || 0;
     const estatura = parseFloat(form.estatura_cm) || 0;
@@ -74,8 +74,8 @@ export default function NutritionCalcTab({ patientId }) {
       }
     }
 
-    // Efecto termogénico (10%)
-    const efectoTermogenico = geb * 0.1;
+    // Efecto termogénico: ahora multiplicando por 1.1 (según indicación)
+    const efectoTermogenico = geb * 1.1;
 
     // Factor de actividad
     let factorActividad = 1;
@@ -99,7 +99,7 @@ export default function NutritionCalcTab({ patientId }) {
     // Gasto energético total (GET) sin TEF
     const getSinTEF = geb * factorActividad;
 
-    // Sumar TEF (10%)
+    // Sumar TEF (con la nueva fórmula)
     const getConTEF = getSinTEF + efectoTermogenico;
 
     // Ajuste por déficit / superávit / mantenimiento
@@ -159,6 +159,9 @@ Lípidos: ${gFat.toFixed(1)} g (${pctFatReal.toFixed(
       gCarb,
       gProt,
       gFat,
+      kcalCarb,
+      kcalProt,
+      kcalFat,
       kcalPorKg,
       gCarbKg,
       gProtKg,
@@ -221,11 +224,16 @@ Lípidos: ${gFat.toFixed(1)} g (${pctFatReal.toFixed(
     gCarb,
     gProt,
     gFat,
+    kcalCarb,
+    kcalProt,
+    kcalFat,
     kcalPorKg,
     gCarbKg,
     gProtKg,
     gFatKg,
   } = calculated;
+
+  const pesoPx = form.peso_kg ? parseFloat(form.peso_kg) || 0 : 0;
 
   return (
     <div className="nutrition-tab">
@@ -391,7 +399,9 @@ Lípidos: ${gFat.toFixed(1)} g (${pctFatReal.toFixed(
             {geb ? geb.toFixed(2) : '-'} kcal
           </p>
           <p>
-            <strong>Efecto termogénico (10%):</strong>{' '}
+            <strong>
+              Efecto termogénico (GEB x 1.1):
+            </strong>{' '}
             {efectoTermogenico ? efectoTermogenico.toFixed(2) : '-'} kcal
           </p>
           <p>
@@ -407,19 +417,22 @@ Lípidos: ${gFat.toFixed(1)} g (${pctFatReal.toFixed(
           </p>
 
           <p>
-            <strong>Distribución de macros:</strong>
+            <strong>Distribución de macros (resumen):</strong>
             <br />
             CHO: {pctCarbReal.toFixed(1)}% →{' '}
-            {gCarb.toFixed(1)} g
+            {gCarb.toFixed(1)} g (
+            {kcalCarb ? kcalCarb.toFixed(0) : '0'} kcal)
             <br />
             PROT: {pctProtReal.toFixed(1)}% →{' '}
-            {gProt.toFixed(1)} g
+            {gProt.toFixed(1)} g (
+            {kcalProt ? kcalProt.toFixed(0) : '0'} kcal)
             <br />
             LIP: {pctFatReal.toFixed(1)}% →{' '}
-            {gFat.toFixed(1)} g
+            {gFat.toFixed(1)} g (
+            {kcalFat ? kcalFat.toFixed(0) : '0'} kcal)
           </p>
 
-          {form.peso_kg && parseFloat(form.peso_kg) > 0 && (
+          {pesoPx > 0 && (
             <>
               <p>
                 <strong>Por kg de peso:</strong>
@@ -439,6 +452,65 @@ Lípidos: ${gFat.toFixed(1)} g (${pctFatReal.toFixed(
                 </li>
               </ul>
             </>
+          )}
+
+          {/* TABLA TIPO EXCEL DE MACROS */}
+          {pesoPx > 0 && (
+            <div style={{ marginTop: 12 }}>
+              <h5 style={{ marginTop: 0 }}>
+                Tabla de distribución de macros
+              </h5>
+              <table className="nutrition-macro-table">
+                <thead>
+                  <tr>
+                    <th>Nutrimento</th>
+                    <th>%</th>
+                    <th>Kcal</th>
+                    <th>Gramos (g)</th>
+                    <th>g/kg</th>
+                    <th>Peso del px (kg)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Hidratos de carbono (HC)</td>
+                    <td>{pctCarbReal.toFixed(1)}</td>
+                    <td>{kcalCarb ? kcalCarb.toFixed(1) : '0'}</td>
+                    <td>{gCarb.toFixed(1)}</td>
+                    <td>{gCarbKg.toFixed(2)}</td>
+                    <td rowSpan={3}>{pesoPx.toFixed(1)}</td>
+                  </tr>
+                  <tr>
+                    <td>Proteínas (Pro)</td>
+                    <td>{pctProtReal.toFixed(1)}</td>
+                    <td>{kcalProt ? kcalProt.toFixed(1) : '0'}</td>
+                    <td>{gProt.toFixed(1)}</td>
+                    <td>{gProtKg.toFixed(2)}</td>
+                  </tr>
+                  <tr>
+                    <td>Lípidos (Lip)</td>
+                    <td>{pctFatReal.toFixed(1)}</td>
+                    <td>{kcalFat ? kcalFat.toFixed(1) : '0'}</td>
+                    <td>{gFat.toFixed(1)}</td>
+                    <td>{gFatKg.toFixed(2)}</td>
+                  </tr>
+                  <tr>
+                    <td><strong>Total</strong></td>
+                    <td>
+                      {(pctCarbReal + pctProtReal + pctFatReal).toFixed(1)}
+                    </td>
+                    <td>
+                      {caloriasObjetivo
+                        ? caloriasObjetivo.toFixed(1)
+                        : '0'}
+                    </td>
+                    <td>-</td>
+                    <td>-</td>
+                    <td>{pesoPx.toFixed(1)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
 

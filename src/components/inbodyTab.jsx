@@ -2,675 +2,565 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
 
+const EMPTY_FORM = {
+  fecha: '',
+  sexo: '', // "hombre" | "mujer"
+  peso_actual_kg: '',
+  estatura_m: '',
+  porcentaje_grasa: '',
+  porcentaje_grasa_ideal: '',
+  masa_muscular_total_kg: '',
+
+  // Grasa segmentada (kg)
+  grasa_brazo_izq_kg: '',
+  grasa_brazo_der_kg: '',
+  grasa_pierna_izq_kg: '',
+  grasa_pierna_der_kg: '',
+  grasa_torso_kg: '',
+
+  // Masa muscular segmentada (kg)
+  mm_brazo_izq_kg: '',
+  mm_brazo_der_kg: '',
+  mm_pierna_izq_kg: '',
+  mm_pierna_der_kg: '',
+  mm_torso_kg: '',
+
+  notas: '',
+};
+
 export default function InbodyTab({ patientId }) {
-  const [records, setRecords] = useState([]);
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [recordId, setRecordId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
-  const [goals, setGoals] = useState(null);
 
-  const [patientSex, setPatientSex] = useState(null);
-
-  const [form, setForm] = useState({
-    fecha: '',
-    peso_kg: '',
-    peso_ideal_kg: '',
-    imc: '',
-    grasa_visceral_puntos: '',
-    agua_corporal_l: '',
-    agua_ideal_min_l: '',
-    agua_ideal_max_l: '',
-    masa_grasa_kg: '',
-    porcentaje_grasa: '',
-    masa_muscular_kg: '',
-    porcentaje_grasa_ideal: '',
-    // NUEVO: grasa segmentada
-    grasa_brazo_izq_kg: '',
-    grasa_brazo_der_kg: '',
-    grasa_pierna_izq_kg: '',
-    grasa_pierna_der_kg: '',
-    grasa_tronco_kg: '',
-    // NUEVO: masa muscular segmentada
-    masa_brazo_izq_kg: '',
-    masa_brazo_der_kg: '',
-    masa_pierna_izq_kg: '',
-    masa_pierna_der_kg: '',
-    masa_tronco_kg: '',
-  });
-
-  // Fecha por defecto
+  // Fecha por defecto al montar
   useEffect(() => {
     const today = new Date().toISOString().substring(0, 10);
-    setForm((f) => ({ ...f, fecha: today }));
+    setForm((prev) => ({
+      ...prev,
+      fecha: prev.fecha || today,
+    }));
   }, []);
 
-  // Cargar registros InBody
+  // Cargar registro InBody del paciente desde inbody_records
   useEffect(() => {
     const fetchInbody = async () => {
       setLoading(true);
+      setMsg('');
+
       const { data, error } = await supabase
         .from('inbody_records')
         .select('*')
         .eq('patient_id', patientId)
-        .order('fecha', { ascending: false });
+        .single();
 
       if (error) {
-        console.error(error);
-      } else {
-        setRecords(data || []);
+        // PGRST116 = sin filas, normal si no tiene InBody aún
+        if (error.code !== 'PGRST116') {
+          console.error(error);
+        }
+        setRecordId(null);
+        setForm((prev) => ({
+          ...EMPTY_FORM,
+          fecha: prev.fecha || new Date().toISOString().substring(0, 10),
+        }));
+      } else if (data) {
+        setRecordId(data.id);
+
+        // Mapear columnas de la BD al formulario (todo a string)
+        const next = { ...EMPTY_FORM };
+        Object.keys(EMPTY_FORM).forEach((key) => {
+          if (data[key] !== undefined && data[key] !== null) {
+            next[key] = data[key].toString();
+          }
+        });
+
+        if (!next.fecha) {
+          next.fecha = new Date().toISOString().substring(0, 10);
+        }
+
+        setForm(next);
       }
+
       setLoading(false);
     };
 
     fetchInbody();
   }, [patientId]);
 
-  // Cargar metas
-  useEffect(() => {
-    const fetchGoals = async () => {
-      const { data, error } = await supabase
-        .from('goals')
-        .select('*')
-        .eq('patient_id', patientId)
-        .single();
-
-      if (error && error.code !== 'PGRST116') {
-        console.error(error);
-      } else if (data) {
-        setGoals(data);
-      }
-    };
-
-    fetchGoals();
-  }, [patientId]);
-
-  // Cargar sexo del paciente
-  useEffect(() => {
-    const fetchPatientSex = async () => {
-      const { data, error } = await supabase
-        .from('patients')
-        .select('*')
-        .eq('id', patientId)
-        .single();
-
-      if (error) {
-        console.error('Error al obtener paciente:', error);
-        return;
-      }
-
-      const sex =
-        data.sexo ??
-        data.sex ??
-        data.genero ??
-        data.gender ??
-        null;
-
-      setPatientSex(sex);
-    };
-
-    fetchPatientSex();
-  }, [patientId]);
-
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setForm((prev) => ({ ...prev, [name]: value }));
+  const handleChange = (field, value) => {
+    setForm((prev) => ({ ...prev, [field]: value }));
     setMsg('');
   };
 
- // Cálculos de grasa corporal, exceso, etc.
-const derived = useMemo(() => {
-  const peso = parseFloat(form.peso_actual_kg) || 0;
-  const estaturaM = parseFloat(form.estatura_m) || 0;
-  const pctGrasa = parseFloat(form.porcentaje_grasa) || 0;
-  const pctIdeal = form.porcentaje_grasa_ideal
-    ? parseFloat(form.porcentaje_grasa_ideal)
-    : 0;
+  // IMC automático: peso (kg) / estatura (m)^2
+  const imc = useMemo(() => {
+    const peso = parseFloat(form.peso_actual_kg) || 0;
+    const estaturaM = parseFloat(form.estatura_m) || 0;
+    if (peso <= 0 || estaturaM <= 0) return 0;
+    return peso / (estaturaM * estaturaM);
+  }, [form.peso_actual_kg, form.estatura_m]);
 
-  const grasaTotalKg =
-    peso > 0 && estaturaM > 0 ? peso / (estaturaM * estaturaM) : 0;
+  // % de grasa ideal según sexo: 25% hombre, 31% mujer
+  const grasaIdealPct = useMemo(() => {
+    if (form.sexo === 'hombre') return 25;
+    if (form.sexo === 'mujer') return 31;
+    return 0;
+  }, [form.sexo]);
 
-  const excesoPct =
-    pctGrasa > 0 && pctIdeal > 0 ? pctGrasa - pctIdeal : 0;
+  // Cálculos de grasa corporal, exceso, peso sin exceso
+  const derived = useMemo(() => {
+    const peso = parseFloat(form.peso_actual_kg) || 0;
+    const pctGrasa = parseFloat(form.porcentaje_grasa) || 0;
+    const pctIdeal = grasaIdealPct || 0;
 
-  const excesoKg =
-    peso > 0 && excesoPct !== 0 ? (peso * excesoPct) / 100 : 0;
+    // Grasa corporal total (kg) = peso * %grasa / 100
+    const grasaTotalKg =
+      peso > 0 && pctGrasa > 0 ? (peso * pctGrasa) / 100 : 0;
 
-  const pesoSinExceso =
-    peso > 0 && excesoKg !== 0 ? peso - excesoKg : 0;
+    const excesoPct =
+      pctGrasa > 0 && pctIdeal > 0 ? pctGrasa - pctIdeal : 0;
 
-  return {
-    grasaTotalKg,
-    excesoPct,
-    excesoKg,
-    pesoSinExceso,
-  };
-}, [
-  form.peso_actual_kg,
-  form.estatura_m,
-  form.porcentaje_grasa,
-  form.porcentaje_grasa_ideal,
-]);
+    const excesoKg =
+      peso > 0 && excesoPct > 0 ? (peso * excesoPct) / 100 : 0;
 
+    const pesoSinExceso =
+      peso > 0 && excesoKg > 0 ? peso - excesoKg : 0;
 
-  // % de grasa ideal automático según sexo (24 hombres / 31 mujeres)
-  const autoIdealFat = useMemo(() => {
-    if (!patientSex) return '';
+    return {
+      grasaTotalKg,
+      excesoPct,
+      excesoKg,
+      pesoSinExceso,
+    };
+  }, [form.peso_actual_kg, form.porcentaje_grasa, grasaIdealPct]);
 
-    const s = String(patientSex).toLowerCase();
-
-    if (s.startsWith('mujer') || s.startsWith('fem') || s === 'f') {
-      return 31;
-    }
-    if (s.startsWith('hombre') || s.startsWith('masc') || s === 'm') {
-      return 24;
-    }
-
-    return '';
-  }, [patientSex]);
-
-  // Rellenar % ideal si está vacío
-  useEffect(() => {
-    if (autoIdealFat === '') return;
-
-    setForm((prev) => {
-      if (
-        prev.porcentaje_grasa_ideal &&
-        prev.porcentaje_grasa_ideal !== autoIdealFat.toString()
-      ) {
-        return prev;
-      }
-      return {
-        ...prev,
-        porcentaje_grasa_ideal: autoIdealFat.toString(),
-      };
-    });
-  }, [autoIdealFat]);
+  const { grasaTotalKg, excesoPct, excesoKg, pesoSinExceso } = derived;
 
   const handleSave = async (e) => {
     e.preventDefault();
     setSaving(true);
     setMsg('');
 
-    const { grasaTotalKg } = derived;
+    const num = (v) =>
+      v !== '' && v !== null && v !== undefined ? parseFloat(v) : null;
 
     const payload = {
+      id: recordId || undefined,
       patient_id: patientId,
-      fecha: form.fecha,
-      peso_kg: form.peso_kg ? parseFloat(form.peso_kg) : null,
-      masa_muscular_kg: form.masa_muscular_kg
-        ? parseFloat(form.masa_muscular_kg)
-        : null,
-      porcentaje_grasa: form.porcentaje_grasa
-        ? parseFloat(form.porcentaje_grasa)
-        : null,
-      masa_grasa_kg: form.masa_grasa_kg
-        ? parseFloat(form.masa_grasa_kg)
-        : grasaTotalKg || null,
-      agua_corporal_l: form.agua_corporal_l
-        ? parseFloat(form.agua_corporal_l)
-        : null,
-      peso_ideal_kg: form.peso_ideal_kg
-        ? parseFloat(form.peso_ideal_kg)
-        : null,
-      imc: form.imc ? parseFloat(form.imc) : null,
-      grasa_visceral_puntos: form.grasa_visceral_puntos
-        ? parseFloat(form.grasa_visceral_puntos)
-        : null,
-      agua_ideal_min_l: form.agua_ideal_min_l
-        ? parseFloat(form.agua_ideal_min_l)
-        : null,
-      agua_ideal_max_l: form.agua_ideal_max_l
-        ? parseFloat(form.agua_ideal_max_l)
-        : null,
-      porcentaje_grasa_ideal: form.porcentaje_grasa_ideal
-        ? parseFloat(form.porcentaje_grasa_ideal)
-        : null,
-      // NUEVO: grasa segmentada
-      grasa_brazo_izq_kg: form.grasa_brazo_izq_kg
-        ? parseFloat(form.grasa_brazo_izq_kg)
-        : null,
-      grasa_brazo_der_kg: form.grasa_brazo_der_kg
-        ? parseFloat(form.grasa_brazo_der_kg)
-        : null,
-      grasa_pierna_izq_kg: form.grasa_pierna_izq_kg
-        ? parseFloat(form.grasa_pierna_izq_kg)
-        : null,
-      grasa_pierna_der_kg: form.grasa_pierna_der_kg
-        ? parseFloat(form.grasa_pierna_der_kg)
-        : null,
-      grasa_tronco_kg: form.grasa_tronco_kg
-        ? parseFloat(form.grasa_tronco_kg)
-        : null,
-      // NUEVO: masa muscular segmentada
-      masa_brazo_izq_kg: form.masa_brazo_izq_kg
-        ? parseFloat(form.masa_brazo_izq_kg)
-        : null,
-      masa_brazo_der_kg: form.masa_brazo_der_kg
-        ? parseFloat(form.masa_brazo_der_kg)
-        : null,
-      masa_pierna_izq_kg: form.masa_pierna_izq_kg
-        ? parseFloat(form.masa_pierna_izq_kg)
-        : null,
-      masa_pierna_der_kg: form.masa_pierna_der_kg
-        ? parseFloat(form.masa_pierna_der_kg)
-        : null,
-      masa_tronco_kg: form.masa_tronco_kg
-        ? parseFloat(form.masa_tronco_kg)
-        : null,
+
+      fecha: form.fecha || null,
+      sexo: form.sexo || null,
+
+      peso_actual_kg: num(form.peso_actual_kg),
+      estatura_m: num(form.estatura_m),
+      imc: imc || null,
+
+      porcentaje_grasa: num(form.porcentaje_grasa),
+      porcentaje_grasa_ideal: grasaIdealPct || null,
+
+      grasa_corporal_total_kg: grasaTotalKg || null,
+      exceso_grasa_pct: excesoPct || null,
+      exceso_grasa_kg: excesoKg || null,
+      peso_sin_exceso_grasa_kg: pesoSinExceso || null,
+
+      masa_muscular_total_kg: num(form.masa_muscular_total_kg),
+
+      // Grasa segmentada
+      grasa_brazo_izq_kg: num(form.grasa_brazo_izq_kg),
+      grasa_brazo_der_kg: num(form.grasa_brazo_der_kg),
+      grasa_pierna_izq_kg: num(form.grasa_pierna_izq_kg),
+      grasa_pierna_der_kg: num(form.grasa_pierna_der_kg),
+      grasa_torso_kg: num(form.grasa_torso_kg),
+
+      // Masa muscular segmentada
+      mm_brazo_izq_kg: num(form.mm_brazo_izq_kg),
+      mm_brazo_der_kg: num(form.mm_brazo_der_kg),
+      mm_pierna_izq_kg: num(form.mm_pierna_izq_kg),
+      mm_pierna_der_kg: num(form.mm_pierna_der_kg),
+      mm_torso_kg: num(form.mm_torso_kg),
+
+      notas: form.notas || '',
     };
 
     const { data, error } = await supabase
       .from('inbody_records')
-      .insert(payload)
-      .select()
+      .upsert(payload, { onConflict: 'patient_id' })
+      .select('id')
       .single();
 
     if (error) {
       console.error(error);
-      setMsg('Error al guardar registro InBody');
-    } else {
-      setRecords((prev) => [data, ...prev]);
-      setMsg('Registro InBody agregado');
+      setMsg('Error al guardar evaluación InBody');
+      setSaving(false);
+      return;
     }
+
+    setRecordId(data.id);
+    setMsg('Evaluación InBody guardada');
     setSaving(false);
   };
 
-  if (loading) return <div>Cargando registros InBody...</div>;
-
-  const {
-    grasaTotalKg,
-    excesoPct,
-    excesoKg,
-    pesoSinExceso,
-  } = derived;
+  if (loading) return <div>Cargando evaluación InBody...</div>;
 
   return (
     <div className="inbody-tab">
-      {/* FORMULARIO PRINCIPAL */}
-      <form onSubmit={handleSave} className="inbody-form">
-        <h3>Evaluación de composición corporal</h3>
+      <h3>Evaluación de composición corporal (InBody)</h3>
+
+      <form className="clinical-form" onSubmit={handleSave}>
+        {/* DATOS GENERALES */}
+        <h4 style={{ gridColumn: '1 / -1' }}>Datos generales</h4>
 
         <label>
-          Peso actual (kg):
-          <input
-            type="number"
-            step="0.1"
-            name="peso_kg"
-            value={form.peso_kg}
-            onChange={handleChange}
-          />
-        </label>
-
-        <label>
-          Fecha de sesión:
+          Fecha de medición
           <input
             type="date"
-            name="fecha"
             value={form.fecha}
-            onChange={handleChange}
-            required
+            onChange={(e) => handleChange('fecha', e.target.value)}
           />
         </label>
 
         <label>
-          IMC actual:
+          Sexo
+          <select
+            value={form.sexo}
+            onChange={(e) => handleChange('sexo', e.target.value)}
+          >
+            <option value="">Seleccionar...</option>
+            <option value="hombre">Hombre</option>
+            <option value="mujer">Mujer</option>
+          </select>
+        </label>
+
+        <label>
+          Peso actual (kg)
           <input
             type="number"
             step="0.1"
-            name="imc"
-            value={form.imc}
-            onChange={handleChange}
+            value={form.peso_actual_kg}
+            onChange={(e) =>
+              handleChange('peso_actual_kg', e.target.value)
+            }
           />
         </label>
 
         <label>
-          Peso ideal (kg) <small>(editable)</small>:
+          Estatura (m)
+          <input
+            type="number"
+            step="0.01"
+            value={form.estatura_m}
+            onChange={(e) =>
+              handleChange('estatura_m', e.target.value)
+            }
+          />
+        </label>
+
+        <label>
+          IMC (kg/m²)
+          <input
+            type="number"
+            step="0.01"
+            value={imc ? imc.toFixed(2) : ''}
+            readOnly
+          />
+        </label>
+
+        {/* GRASA CORPORAL GLOBAL */}
+        <h4 style={{ gridColumn: '1 / -1' }}>
+          Composición corporal global
+        </h4>
+
+        <label>
+          % de grasa corporal total
           <input
             type="number"
             step="0.1"
-            name="peso_ideal_kg"
-            value={form.peso_ideal_kg}
-            onChange={handleChange}
-          />
-        </label>
-
-        <label>
-          Agua corporal (L):
-          <input
-            type="number"
-            step="0.1"
-            name="agua_corporal_l"
-            value={form.agua_corporal_l}
-            onChange={handleChange}
-          />
-        </label>
-
-        <label>
-          Grasa visceral (puntos):
-          <input
-            type="number"
-            step="1"
-            name="grasa_visceral_puntos"
-            value={form.grasa_visceral_puntos}
-            onChange={handleChange}
-          />
-        </label>
-
-        <label>
-          Rango ideal de agua - mínimo (L):
-          <input
-            type="number"
-            step="0.1"
-            name="agua_ideal_min_l"
-            value={form.agua_ideal_min_l}
-            onChange={handleChange}
-          />
-        </label>
-
-        <label>
-          Rango ideal de agua - máximo (L):
-          <input
-            type="number"
-            step="0.1"
-            name="agua_ideal_max_l"
-            value={form.agua_ideal_max_l}
-            onChange={handleChange}
-          />
-        </label>
-
-        <label>
-          % de masa grasa actual:
-          <input
-            type="number"
-            step="0.1"
-            name="porcentaje_grasa"
             value={form.porcentaje_grasa}
-            onChange={handleChange}
+            onChange={(e) =>
+              handleChange('porcentaje_grasa', e.target.value)
+            }
           />
         </label>
 
         <label>
-          Masa grasa (kg):
+          % de grasa corporal ideal
           <input
             type="number"
             step="0.1"
-            name="masa_grasa_kg"
-            value={form.masa_grasa_kg}
-            onChange={handleChange}
+            value={grasaIdealPct ? grasaIdealPct.toFixed(1) : ''}
+            readOnly
           />
+          <small
+            style={{
+              display: 'block',
+              fontSize: '0.75rem',
+              color: '#9ca3af',
+            }}
+          >
+            Se asigna automáticamente: 25% en hombres, 31% en mujeres.
+          </small>
         </label>
 
         <label>
-          Masa muscular total (kg):
+          Masa muscular total (kg)
           <input
             type="number"
             step="0.1"
-            name="masa_muscular_kg"
-            value={form.masa_muscular_kg}
-            onChange={handleChange}
+            value={form.masa_muscular_total_kg}
+            onChange={(e) =>
+              handleChange(
+                'masa_muscular_total_kg',
+                e.target.value
+              )
+            }
           />
         </label>
 
-        <label>
-          % de grasa ideal usado en el cálculo
-          <small> (se llena según sexo, puedes editarlo)</small>:
-          <input
-            type="number"
-            step="0.1"
-            name="porcentaje_grasa_ideal"
-            value={form.porcentaje_grasa_ideal}
-            onChange={handleChange}
-          />
-        </label>
-
-        {/* NUEVO: GRASA SEGMENTADA */}
-        <div style={{ gridColumn: '1 / -1', marginTop: 16 }}>
-          <h4>Grasa segmentada (kg)</h4>
+        {/* RESUMEN DE CÁLCULOS */}
+        <div
+          style={{
+            gridColumn: '1 / -1',
+            marginTop: 8,
+            padding: 12,
+            borderRadius: 12,
+            border: '1px solid #374151',
+            background: '#020617',
+            fontSize: '0.9rem',
+          }}
+        >
+          <h5 style={{ marginTop: 0 }}>Resumen de grasa corporal</h5>
+          <p>
+            <strong>Grasa corporal total (kg):</strong>{' '}
+            {grasaTotalKg ? grasaTotalKg.toFixed(2) : '—'}
+          </p>
+          <p>
+            <strong>Exceso de grasa (%):</strong>{' '}
+            {excesoPct ? excesoPct.toFixed(1) : '—'}
+            <br />
+            <strong>Exceso de grasa (kg):</strong>{' '}
+            {excesoKg ? excesoKg.toFixed(2) : '—'}
+          </p>
+          <p>
+            <strong>Peso sin exceso de grasa (kg):</strong>{' '}
+            {pesoSinExceso ? pesoSinExceso.toFixed(2) : '—'}
+          </p>
         </div>
 
-        <label>
-          Brazo izquierdo (kg):
-          <input
-            type="number"
-            step="0.1"
-            name="grasa_brazo_izq_kg"
-            value={form.grasa_brazo_izq_kg}
-            onChange={handleChange}
-          />
-        </label>
+        {/* GRASA SEGMENTADA */}
+        <h4 style={{ gridColumn: '1 / -1', marginTop: 12 }}>
+          Grasa segmentada (kg)
+        </h4>
 
-        <label>
-          Brazo derecho (kg):
-          <input
-            type="number"
-            step="0.1"
-            name="grasa_brazo_der_kg"
-            value={form.grasa_brazo_der_kg}
-            onChange={handleChange}
-          />
-        </label>
-
-        <label>
-          Pierna izquierda (kg):
-          <input
-            type="number"
-            step="0.1"
-            name="grasa_pierna_izq_kg"
-            value={form.grasa_pierna_izq_kg}
-            onChange={handleChange}
-          />
-        </label>
-
-        <label>
-          Pierna derecha (kg):
-          <input
-            type="number"
-            step="0.1"
-            name="grasa_pierna_der_kg"
-            value={form.grasa_pierna_der_kg}
-            onChange={handleChange}
-          />
-        </label>
-
-        <label>
-          Tronco / torso (kg):
-          <input
-            type="number"
-            step="0.1"
-            name="grasa_tronco_kg"
-            value={form.grasa_tronco_kg}
-            onChange={handleChange}
-          />
-        </label>
-
-        {/* NUEVO: MASA MUSCULAR SEGMENTADA */}
-        <div style={{ gridColumn: '1 / -1', marginTop: 16 }}>
-          <h4>Masa muscular segmentada (kg)</h4>
+        <div style={{ gridColumn: '1 / -1' }}>
+          <table className="menu-items-table">
+            <thead>
+              <tr>
+                <th>Segmento</th>
+                <th>Kg de grasa</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Brazo izquierdo</td>
+                <td>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={form.grasa_brazo_izq_kg}
+                    onChange={(e) =>
+                      handleChange(
+                        'grasa_brazo_izq_kg',
+                        e.target.value
+                      )
+                    }
+                  />
+                </td>
+              </tr>
+              <tr>
+                <td>Brazo derecho</td>
+                <td>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={form.grasa_brazo_der_kg}
+                    onChange={(e) =>
+                      handleChange(
+                        'grasa_brazo_der_kg',
+                        e.target.value
+                      )
+                    }
+                  />
+                </td>
+              </tr>
+              <tr>
+                <td>Pierna izquierda</td>
+                <td>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={form.grasa_pierna_izq_kg}
+                    onChange={(e) =>
+                      handleChange(
+                        'grasa_pierna_izq_kg',
+                        e.target.value
+                      )
+                    }
+                  />
+                </td>
+              </tr>
+              <tr>
+                <td>Pierna derecha</td>
+                <td>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={form.grasa_pierna_der_kg}
+                    onChange={(e) =>
+                      handleChange(
+                        'grasa_pierna_der_kg',
+                        e.target.value
+                      )
+                    }
+                  />
+                </td>
+              </tr>
+              <tr>
+                <td>Torso</td>
+                <td>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={form.grasa_torso_kg}
+                    onChange={(e) =>
+                      handleChange('grasa_torso_kg', e.target.value)
+                    }
+                  />
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
 
-        <label>
-          Brazo izquierdo (kg):
-          <input
-            type="number"
-            step="0.1"
-            name="masa_brazo_izq_kg"
-            value={form.masa_brazo_izq_kg}
-            onChange={handleChange}
-          />
-        </label>
+        {/* MASA MUSCULAR SEGMENTADA */}
+        <h4 style={{ gridColumn: '1 / -1', marginTop: 12 }}>
+          Masa muscular segmentada (kg)
+        </h4>
 
-        <label>
-          Brazo derecho (kg):
-          <input
-            type="number"
-            step="0.1"
-            name="masa_brazo_der_kg"
-            value={form.masa_brazo_der_kg}
-            onChange={handleChange}
-          />
-        </label>
+        <div style={{ gridColumn: '1 / -1' }}>
+          <table className="menu-items-table">
+            <thead>
+              <tr>
+                <th>Segmento</th>
+                <th>Kg de masa muscular</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Brazo izquierdo</td>
+                <td>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={form.mm_brazo_izq_kg}
+                    onChange={(e) =>
+                      handleChange(
+                        'mm_brazo_izq_kg',
+                        e.target.value
+                      )
+                    }
+                  />
+                </td>
+              </tr>
+              <tr>
+                <td>Brazo derecho</td>
+                <td>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={form.mm_brazo_der_kg}
+                    onChange={(e) =>
+                      handleChange(
+                        'mm_brazo_der_kg',
+                        e.target.value
+                      )
+                    }
+                  />
+                </td>
+              </tr>
+              <tr>
+                <td>Pierna izquierda</td>
+                <td>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={form.mm_pierna_izq_kg}
+                    onChange={(e) =>
+                      handleChange(
+                        'mm_pierna_izq_kg',
+                        e.target.value
+                      )
+                    }
+                  />
+                </td>
+              </tr>
+              <tr>
+                <td>Pierna derecha</td>
+                <td>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={form.mm_pierna_der_kg}
+                    onChange={(e) =>
+                      handleChange(
+                        'mm_pierna_der_kg',
+                        e.target.value
+                      )
+                    }
+                  />
+                </td>
+              </tr>
+              <tr>
+                <td>Torso</td>
+                <td>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={form.mm_torso_kg}
+                    onChange={(e) =>
+                      handleChange('mm_torso_kg', e.target.value)
+                    }
+                  />
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
 
-        <label>
-          Pierna izquierda (kg):
-          <input
-            type="number"
-            step="0.1"
-            name="masa_pierna_izq_kg"
-            value={form.masa_pierna_izq_kg}
-            onChange={handleChange}
-          />
-        </label>
-
-        <label>
-          Pierna derecha (kg):
-          <input
-            type="number"
-            step="0.1"
-            name="masa_pierna_der_kg"
-            value={form.masa_pierna_der_kg}
-            onChange={handleChange}
-          />
-        </label>
-
-        <label>
-          Tronco / torso (kg):
-          <input
-            type="number"
-            step="0.1"
-            name="masa_tronco_kg"
-            value={form.masa_tronco_kg}
-            onChange={handleChange}
+        {/* NOTAS */}
+        <label style={{ gridColumn: '1 / -1', marginTop: 12 }}>
+          Notas / interpretación de resultados
+          <textarea
+            rows={3}
+            value={form.notas}
+            onChange={(e) =>
+              handleChange('notas', e.target.value)
+            }
           />
         </label>
 
         <button type="submit" disabled={saving}>
-          {saving ? 'Guardando...' : 'Agregar registro InBody'}
+          {saving ? 'Guardando...' : 'Guardar evaluación InBody'}
         </button>
 
-        {msg && <p className="info">{msg}</p>}
-      </form>
-
-      {/* CÁLCULOS DERIVADOS */}
-      <section style={{ marginTop: 16, marginBottom: 16 }}>
-        <h3>Cálculos de grasa corporal (auto)</h3>
-        <p style={{ fontSize: '0.9rem', color: '#9ca3af' }}>
-          Se calculan a partir de peso actual, % de grasa actual y % de grasa
-          ideal.
-        </p>
-
-        <div className="inbody-form">
-          <label>
-            Grasa corporal total (kg):
-            <input
-              type="number"
-              readOnly
-              value={grasaTotalKg ? grasaTotalKg.toFixed(2) : ''}
-            />
-          </label>
-
-          <label>
-            Exceso de grasa (%):
-            <input
-              type="number"
-              readOnly
-              value={
-                excesoPct || excesoPct === 0
-                  ? excesoPct.toFixed(2)
-                  : ''
-              }
-            />
-          </label>
-
-          <label>
-            Exceso de grasa (kg):
-            <input
-              type="number"
-              readOnly
-              value={excesoKg ? excesoKg.toFixed(2) : ''}
-            />
-          </label>
-
-          <label>
-            Peso esperado sin exceso de grasa (kg):
-            <input
-              type="number"
-              readOnly
-              value={pesoSinExceso ? pesoSinExceso.toFixed(2) : ''}
-            />
-          </label>
-        </div>
-      </section>
-
-      {/* METAS (resumen) */}
-      <section style={{ marginTop: 8, marginBottom: 20 }}>
-        <h3>Metas del paciente (resumen)</h3>
-        {goals ? (
-          <div className="inbody-form">
-            <label>
-              Peso objetivo (kg):
-              <input
-                type="number"
-                readOnly
-                value={goals.peso_objetivo_kg ?? ''}
-              />
-            </label>
-            <label>
-              Masa muscular objetivo (kg):
-              <input
-                type="number"
-                readOnly
-                value={goals.masa_muscular_objetivo_kg ?? ''}
-              />
-            </label>
-            <label>
-              % grasa objetivo:
-              <input
-                type="number"
-                readOnly
-                value={goals.porcentaje_grasa_objetivo ?? ''}
-              />
-            </label>
-            <label>
-              Notas:
-              <textarea readOnly value={goals.notas || ''} rows={2} />
-            </label>
-          </div>
-        ) : (
-          <p style={{ fontSize: '0.9rem', color: '#9ca3af' }}>
-            Aún no hay metas registradas. Puedes capturarlas en la pestaña
-            "Metas".
+        {msg && (
+          <p className={msg.startsWith('Error') ? 'error' : 'info'}>
+            {msg}
           </p>
         )}
-      </section>
-
-      {/* HISTORIAL INBODY */}
-      <h3>Historial de sesiones InBody</h3>
-      {records.length === 0 && <p>Sin registros aún.</p>}
-
-      <table className="inbody-table">
-        <thead>
-          <tr>
-            <th>Fecha</th>
-            <th>Peso</th>
-            <th>M. muscular</th>
-            <th>% Grasa</th>
-            <th>M. grasa (kg)</th>
-            <th>Agua (L)</th>
-          </tr>
-        </thead>
-        <tbody>
-          {records.map((r) => (
-            <tr key={r.id}>
-              <td>{r.fecha}</td>
-              <td>{r.peso_kg ?? '-'}</td>
-              <td>{r.masa_muscular_kg ?? '-'}</td>
-              <td>{r.porcentaje_grasa ?? '-'}</td>
-              <td>{r.masa_grasa_kg ?? '-'}</td>
-              <td>{r.agua_corporal_l ?? '-'}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      </form>
     </div>
   );
 }

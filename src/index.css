@@ -640,3 +640,59 @@ button:disabled {
 .patient-contact-line {
   line-height: 1.2;
 }
+/* Tabla de distribución de macros (NutritionCalcTab) */
+.nutrition-macro-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 8px;
+  font-size: 0.85rem;
+  background: #020617;           /* mismo fondo que las cards */
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.nutrition-macro-table thead {
+  background: #0f172a;           /* encabezado un poco más claro */
+}
+
+.nutrition-macro-table th,
+.nutrition-macro-table td {
+  padding: 6px 8px;
+  border: 1px solid #374151;     /* gris oscuro, igual que el resto de tu UI */
+  text-align: center;
+  color: #e5e7eb;                /* texto gris muy claro */
+}
+
+.nutrition-macro-table th {
+  font-weight: 600;
+  text-transform: none;
+  font-size: 0.8rem;
+}
+
+.nutrition-macro-table tbody tr:nth-child(odd) {
+  background: #020617;           /* filas impares */
+}
+
+.nutrition-macro-table tbody tr:nth-child(even) {
+  background: #030712;           /* filas pares ligeramente distintas */
+}
+
+.nutrition-macro-table tbody tr:hover {
+  background: #111827;           /* hover para resaltar la fila */
+}
+
+.nutrition-macro-table td:first-child {
+  text-align: left;              /* nombre del nutrimento alineado a la izquierda */
+}
+
+/* Por si la tabla se ve apretada en pantallas chicas */
+@media (max-width: 768px) {
+  .nutrition-macro-table {
+    font-size: 0.78rem;
+  }
+
+  .nutrition-macro-table th,
+  .nutrition-macro-table td {
+    padding: 4px 6px;
+  }
+}
